@@ -35,7 +35,7 @@ Your source root is `/home/hermes/workspace/`.
 
 | Command | Editable install from |
 |---------|----------------------|
-| `hermes` | `~/.local/hermes-dev-stable/` (via `/home/hermes/venv-stable/`) |
+| `hermes` | `~/.local/hermes-dev-stable/` (via `/home/hermes/venv-dev-stable/`) |
 | `hermes-dev` | `/home/hermes/workspace/hermes-dev/` (via `/home/hermes/venv-dev/`) |
 
 ## Dev Workflow
