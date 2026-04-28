@@ -847,6 +847,7 @@ class AIAgent:
         disabled_toolsets: List[str] = None,
         save_trajectories: bool = False,
         verbose_logging: bool = False,
+        detailed_output: bool = False,
         quiet_mode: bool = False,
         ephemeral_system_prompt: str = None,
         log_prefix_chars: int = 100,
@@ -907,7 +908,10 @@ class AIAgent:
             enabled_toolsets (List[str]): Only enable tools from these toolsets (optional)
             disabled_toolsets (List[str]): Disable tools from these toolsets (optional)
             save_trajectories (bool): Whether to save conversation trajectories to JSONL files (default: False)
-            verbose_logging (bool): Enable verbose logging for debugging (default: False)
+            verbose_logging (bool): Enable verbose logging for debugging — enables DEBUG-level
+                console logging output (default: False)
+            detailed_output (bool): Show detailed turn output (thinking blocks, full tool args/results,
+                full assistant messages) WITHOUT debug log noise. verbose_logging implies this (default: False)
             quiet_mode (bool): Suppress progress output for clean CLI experience (default: False)
             ephemeral_system_prompt (str): System prompt used during agent execution but NOT saved to trajectories (optional)
             log_prefix_chars (int): Number of characters to show in log previews for tool calls/responses (default: 100)
@@ -945,6 +949,9 @@ class AIAgent:
         self.tool_delay = tool_delay
         self.save_trajectories = save_trajectories
         self.verbose_logging = verbose_logging
+        # detailed_output shows clean turn detail without debug log spam.
+        # verbose_logging implies detailed_output for backward compat.
+        self.detailed_output = detailed_output or verbose_logging
         self.quiet_mode = quiet_mode
         self.ephemeral_system_prompt = ephemeral_system_prompt
         self.platform = platform  # "cli", "telegram", "discord", "whatsapp", etc.
@@ -1259,7 +1266,7 @@ class AIAgent:
                 self.api_key = "aws-sdk"
                 self.client = None
                 self._client_kwargs = {}
-                if not self.quiet_mode:
+                if self.verbose_logging:
                     print(f"🤖 AI Agent initialized with model: {self.model} (AWS Bedrock + AnthropicBedrock SDK, {_br_region})")
             else:
                 # Only fall back to ANTHROPIC_TOKEN when the provider is actually Anthropic.
@@ -1283,7 +1290,7 @@ class AIAgent:
                 # No OpenAI client needed for Anthropic mode
                 self.client = None
                 self._client_kwargs = {}
-                if not self.quiet_mode:
+                if self.verbose_logging:
                     print(f"🤖 AI Agent initialized with model: {self.model} (Anthropic native)")
                     if effective_key and len(effective_key) > 12:
                         print(f"🔑 Using token: {effective_key[:8]}...{effective_key[-4:]}")
@@ -1310,7 +1317,7 @@ class AIAgent:
                 pass
             self.client = None
             self._client_kwargs = {}
-            if not self.quiet_mode:
+            if self.verbose_logging:
                 _gr_label = " + Guardrails" if self._bedrock_guardrail_config else ""
                 print(f"🤖 AI Agent initialized with model: {self.model} (AWS Bedrock, {self._bedrock_region}{_gr_label})")
         else:
@@ -1428,7 +1435,7 @@ class AIAgent:
             self.base_url = client_kwargs.get("base_url", self.base_url)
             try:
                 self.client = self._create_openai_client(client_kwargs, reason="agent_init", shared=True)
-                if not self.quiet_mode:
+                if self.verbose_logging:
                     print(f"🤖 AI Agent initialized with model: {self.model}")
                     if base_url:
                         print(f"🔗 Using custom base URL: {base_url}")
@@ -1470,7 +1477,7 @@ class AIAgent:
         self.tools = get_tool_definitions(
             enabled_toolsets=enabled_toolsets,
             disabled_toolsets=disabled_toolsets,
-            quiet_mode=self.quiet_mode,
+            quiet_mode=not self.verbose_logging,
         )
         
         # Show tool configuration and store valid tool names for validation
@@ -1478,7 +1485,7 @@ class AIAgent:
         if self.tools:
             self.valid_tool_names = {tool["function"]["name"] for tool in self.tools}
             tool_names = sorted(self.valid_tool_names)
-            if not self.quiet_mode:
+            if self.verbose_logging:
                 print(f"🛠️  Loaded {len(self.tools)} tools: {', '.join(tool_names)}")
                 
                 # Show filtering info if applied
@@ -1486,22 +1493,22 @@ class AIAgent:
                     print(f"   ✅ Enabled toolsets: {', '.join(enabled_toolsets)}")
                 if disabled_toolsets:
                     print(f"   ❌ Disabled toolsets: {', '.join(disabled_toolsets)}")
-        elif not self.quiet_mode:
+        elif self.verbose_logging:
             print("🛠️  No tools loaded (all tools filtered out or unavailable)")
         
         # Check tool requirements
-        if self.tools and not self.quiet_mode:
+        if self.tools and self.verbose_logging:
             requirements = check_toolset_requirements()
             missing_reqs = [name for name, available in requirements.items() if not available]
             if missing_reqs:
                 print(f"⚠️  Some tools may not work due to missing requirements: {missing_reqs}")
         
         # Show trajectory saving status
-        if self.save_trajectories and not self.quiet_mode:
+        if self.save_trajectories and self.verbose_logging:
             print("📝 Trajectory saving enabled")
         
         # Show ephemeral system prompt status
-        if self.ephemeral_system_prompt and not self.quiet_mode:
+        if self.ephemeral_system_prompt and self.verbose_logging:
             prompt_preview = self.ephemeral_system_prompt[:60] + "..." if len(self.ephemeral_system_prompt) > 60 else self.ephemeral_system_prompt
             print(f"🔒 Ephemeral system prompt: '{prompt_preview}' (not saved to trajectories)")
         
@@ -2001,7 +2008,7 @@ class AIAgent:
                 self._ollama_num_ctx,
             )
 
-        if not self.quiet_mode:
+        if self.verbose_logging:
             if compression_enabled:
                 print(f"📊 Context limit: {self.context_compressor.context_length:,} tokens (compress at {int(compression_threshold*100)}% = {self.context_compressor.threshold_tokens:,})")
             else:
@@ -5971,6 +5978,7 @@ class AIAgent:
         """Fire reasoning callback if registered."""
         cb = self.reasoning_callback
         if cb is not None:
+            self._reasoning_shown_via_delta = True
             try:
                 cb(text)
             except Exception:
@@ -7722,7 +7730,10 @@ class AIAgent:
             # (gateway, batch, quiet) still get reasoning.
             # Any reasoning that wasn't shown during streaming is caught by the
             # CLI post-response display fallback (cli.py _reasoning_shown_this_turn).
-            if not self.stream_delta_callback and not self._stream_callback:
+            # Also skip if reasoning deltas already fired during the API call
+            # (e.g. detailed mode has reasoning_callback but no text streaming).
+            if not self.stream_delta_callback and not self._stream_callback \
+                    and not getattr(self, '_reasoning_shown_via_delta', False):
                 try:
                     self.reasoning_callback(reasoning_text)
                 except Exception:
@@ -8336,6 +8347,67 @@ class AIAgent:
             )
 
     @staticmethod
+    def _detail_divider() -> str:
+        """Return a horizontal divider line at terminal width."""
+        import shutil as _shutil
+        return "─" * _shutil.get_terminal_size((120, 24)).columns
+
+    @staticmethod
+    def _format_for_display(obj, indent: str = "     ") -> str:
+        """Format a dict/list/str for human-readable terminal display.
+
+        Unlike ``json.dumps``, this renders string values **without** surrounding
+        ``"`` quotes, and multiline strings start on a new indented line instead of
+        being escaped as ``\\n``.  Nested dicts/lists are indented recursively.
+        """
+        if isinstance(obj, dict):
+            lines = []
+            for key, value in obj.items():
+                if isinstance(value, str):
+                    rendered = value.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r').replace('\\"', '"')
+                    if '\n' in rendered:
+                        lines.append(f'{indent}"{key}":')
+                        for line in rendered.split('\n'):
+                            lines.append(f"{indent}  {line}")
+                    else:
+                        lines.append(f'{indent}"{key}": {rendered}')
+                elif isinstance(value, (dict, list)):
+                    lines.append(f'{indent}"{key}":')
+                    lines.append(AIAgent._format_for_display(value, indent + "  "))
+                elif isinstance(value, bool):
+                    lines.append(f'{indent}"{key}": {"true" if value else "false"}')
+                elif value is None:
+                    lines.append(f'{indent}"{key}": null')
+                else:
+                    lines.append(f'{indent}"{key}": {value}')
+            return '\n'.join(lines)
+        elif isinstance(obj, list):
+            lines = []
+            for item in obj:
+                if isinstance(item, str):
+                    rendered = item.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r').replace('\\"', '"')
+                    if '\n' in rendered:
+                        lines.append(f"{indent}- {rendered.split(chr(10))[0]}")
+                        for line in rendered.split('\n')[1:]:
+                            lines.append(f"{indent}  {line}")
+                    else:
+                        lines.append(f"{indent}- {rendered}")
+                elif isinstance(item, (dict, list)):
+                    lines.append(f"{indent}-")
+                    lines.append(AIAgent._format_for_display(item, indent + "  "))
+                else:
+                    lines.append(f"{indent}- {item}")
+            return '\n'.join(lines)
+        elif isinstance(obj, str):
+            # Top-level string (e.g. plain tool result)
+            rendered = obj.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r').replace('\\"', '"')
+            if '\n' in rendered:
+                return '\n'.join(f"{indent}{line}" for line in rendered.split('\n'))
+            return f"{indent}{rendered}"
+        else:
+            return f"{indent}{obj}"
+
+    @staticmethod
     def _wrap_verbose(label: str, text: str, indent: str = "     ") -> str:
         """Word-wrap verbose tool output to fit the terminal width.
 
@@ -8428,9 +8500,11 @@ class AIAgent:
             print(f"  ⚡ Concurrent: {num_tools} tool calls — {tool_names_str}")
             for i, (tc, name, args) in enumerate(parsed_calls, 1):
                 args_str = json.dumps(args, ensure_ascii=False)
-                if self.verbose_logging:
+                if self.detailed_output:
                     print(f"  📞 Tool {i}: {name}({list(args.keys())})")
-                    print(self._wrap_verbose("Args: ", json.dumps(args, indent=2, ensure_ascii=False)))
+                    print(f"     Args:")
+                    print(self._format_for_display(args, indent="       "))
+                    print(self._detail_divider())
                 else:
                     args_preview = args_str[:self.log_prefix_chars] + "..." if len(args_str) > self.log_prefix_chars else args_str
                     print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
@@ -8611,9 +8685,17 @@ class AIAgent:
                 cute_msg = _get_cute_tool_message_impl(name, args, tool_duration, result=function_result)
                 self._safe_print(f"  {cute_msg}")
             elif not self.quiet_mode:
-                if self.verbose_logging:
-                    print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s")
-                    print(self._wrap_verbose("Result: ", function_result))
+                if self.detailed_output:
+                    try:
+                        result_obj = json.loads(function_result)
+                    except (json.JSONDecodeError, TypeError):
+                        result_obj = function_result
+                    if isinstance(result_obj, dict):
+                        print(f"     Result:")
+                        print(self._format_for_display(result_obj, indent="       "))
+                    else:
+                        print(f"     Result: {result_obj}")
+                    print(self._detail_divider())
                 else:
                     response_preview = function_result[:self.log_prefix_chars] + "..." if len(function_result) > self.log_prefix_chars else function_result
                     print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s - {response_preview}")
@@ -8716,9 +8798,11 @@ class AIAgent:
 
             if not self.quiet_mode:
                 args_str = json.dumps(function_args, ensure_ascii=False)
-                if self.verbose_logging:
+                if self.detailed_output:
                     print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())})")
-                    print(self._wrap_verbose("Args: ", json.dumps(function_args, indent=2, ensure_ascii=False)))
+                    print(f"     Args:")
+                    print(self._format_for_display(function_args, indent="       "))
+                    print(self._detail_divider())
                 else:
                     args_preview = args_str[:self.log_prefix_chars] + "..." if len(args_str) > self.log_prefix_chars else args_str
                     print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())}) - {args_preview}")
@@ -9016,9 +9100,17 @@ class AIAgent:
             self._apply_pending_steer_to_tool_results(messages, 1)
 
             if not self.quiet_mode:
-                if self.verbose_logging:
-                    print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s")
-                    print(self._wrap_verbose("Result: ", function_result))
+                if self.detailed_output:
+                    try:
+                        result_obj = json.loads(function_result)
+                    except (json.JSONDecodeError, TypeError):
+                        result_obj = function_result
+                    if isinstance(result_obj, dict):
+                        print(f"     Result:")
+                        print(self._format_for_display(result_obj, indent="       "))
+                    else:
+                        print(f"     Result: {result_obj}")
+                    print(self._detail_divider())
                 else:
                     response_preview = function_result[:self.log_prefix_chars] + "..." if len(function_result) > self.log_prefix_chars else function_result
                     print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s - {response_preview}")
@@ -9375,7 +9467,7 @@ class AIAgent:
         current_turn_user_idx = len(messages) - 1
         self._persist_user_message_idx = current_turn_user_idx
         
-        if not self.quiet_mode:
+        if self.verbose_logging:
             _print_preview = _summarize_user_message_for_log(user_message)
             self._safe_print(f"💬 Starting conversation: '{_print_preview[:60]}{'...' if len(_print_preview) > 60 else ''}'")
         
@@ -9843,13 +9935,18 @@ class AIAgent:
             total_chars = sum(len(str(msg)) for msg in api_messages)
             approx_tokens = estimate_messages_tokens_rough(api_messages)
             
+            # Reset per-turn reasoning-delta tracker so the post-response
+            # callback doesn't re-deliver reasoning that was already shown.
+            self._reasoning_shown_via_delta = False
+            
             # Thinking spinner for quiet mode (animated during API call)
             thinking_spinner = None
             
             if not self.quiet_mode:
-                self._vprint(f"\n{self.log_prefix}🔄 Making API call #{api_call_count}/{self.max_iterations}...")
-                self._vprint(f"{self.log_prefix}   📊 Request size: {len(api_messages)} messages, ~{approx_tokens:,} tokens (~{total_chars:,} chars)")
-                self._vprint(f"{self.log_prefix}   🔧 Available tools: {len(self.tools) if self.tools else 0}")
+                if self.verbose_logging:
+                    self._vprint(f"\n{self.log_prefix}🔄 Making API call #{api_call_count}/{self.max_iterations}...")
+                    self._vprint(f"{self.log_prefix}   📊 Request size: {len(api_messages)} messages, ~{approx_tokens:,} tokens (~{total_chars:,} chars)")
+                    self._vprint(f"{self.log_prefix}   🔧 Available tools: {len(self.tools) if self.tools else 0}")
             else:
                 # Animated thinking spinner in quiet mode
                 face = random.choice(KawaiiSpinner.get_thinking_faces())
@@ -10019,7 +10116,7 @@ class AIAgent:
                     if self.thinking_callback:
                         self.thinking_callback("")
                     
-                    if not self.quiet_mode:
+                    if self.verbose_logging:
                         self._vprint(f"{self.log_prefix}⏱️  API call completed in {api_duration:.2f}s")
                     
                     if self.verbose_logging:
@@ -10567,7 +10664,7 @@ class AIAgent:
                         cached = canonical_usage.cache_read_tokens
                         written = canonical_usage.cache_write_tokens
                         prompt = usage_dict["prompt_tokens"]
-                        if (cached or written) and not self.quiet_mode:
+                        if (cached or written) and self.verbose_logging:
                             hit_pct = (cached / prompt * 100) if prompt > 0 else 0
                             self._vprint(
                                 f"{self.log_prefix}   💾 Cache: "
@@ -11663,8 +11760,9 @@ class AIAgent:
 
                 # Handle assistant response
                 if assistant_message.content and not self.quiet_mode:
-                    if self.verbose_logging:
+                    if self.detailed_output:
                         self._vprint(f"{self.log_prefix}🤖 Assistant: {assistant_message.content}")
+                        self._vprint(self._detail_divider())
                     else:
                         self._vprint(f"{self.log_prefix}🤖 Assistant: {assistant_message.content[:100]}{'...' if len(assistant_message.content) > 100 else ''}")
 
@@ -11784,7 +11882,7 @@ class AIAgent:
                 
                 # Check for tool calls
                 if assistant_message.tool_calls:
-                    if not self.quiet_mode:
+                    if self.verbose_logging:
                         self._vprint(f"{self.log_prefix}🔧 Processing {len(assistant_message.tool_calls)} tool call(s)...")
                     
                     if self.verbose_logging:

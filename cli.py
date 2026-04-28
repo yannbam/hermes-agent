@@ -1890,7 +1890,7 @@ class HermesCLI:
         self.console = Console()
         self.config = CLI_CONFIG
         self.compact = compact if compact is not None else CLI_CONFIG["display"].get("compact", False)
-        # tool_progress: "off", "new", "all", "verbose" (from config.yaml display section)
+        # tool_progress: "off", "new", "all", "detailed", "verbose" (from config.yaml display section)
         # YAML 1.1 parses bare `off` as boolean False — normalise to string.
         _raw_tp = CLI_CONFIG["display"].get("tool_progress", "all")
         self.tool_progress_mode = "off" if _raw_tp is False else str(_raw_tp)
@@ -1912,6 +1912,9 @@ class HermesCLI:
             self.busy_input_mode = "interrupt"
 
         self.verbose = verbose if verbose is not None else (self.tool_progress_mode == "verbose")
+        # detailed: clean turn detail without debug log noise.
+        # verbose implies detailed for backward compat.
+        self.detailed = (self.tool_progress_mode in ("detailed", "verbose"))
         
         # streaming: stream tokens to the terminal as they arrive (display.streaming in config.yaml)
         self.streaming_enabled = CLI_CONFIG["display"].get("streaming", False)
@@ -2644,7 +2647,7 @@ class HermesCLI:
         """Return the active reasoning display callback for the current mode."""
         if self.show_reasoning and self.streaming_enabled:
             return self._stream_reasoning_delta
-        if self.verbose and not self.show_reasoning:
+        if (self.verbose or self.detailed) and not self.show_reasoning:
             return self._on_reasoning
         return None
 
@@ -2671,7 +2674,7 @@ class HermesCLI:
         if not preview_text:
             return
 
-        if self.verbose:
+        if self.verbose or self.detailed:
             _cprint(f"  {_DIM}[thinking] {preview_text}{_RST}")
             return
 
@@ -2705,7 +2708,9 @@ class HermesCLI:
         if force:
             flush_text = buf
             buf = ""
+            _force_flush = True
         else:
+            _force_flush = False
             line_break = buf.rfind("\n")
             min_newline_flush = max(16, target_width // 3)
             if line_break != -1 and (
@@ -2731,6 +2736,8 @@ class HermesCLI:
         self._reasoning_preview_buf = buf.lstrip() if flush_text else buf
         if flush_text:
             self._emit_reasoning_preview(flush_text)
+            if _force_flush and (self.verbose or self.detailed):
+                _cprint(f"{_DIM}{'─' * term_width}{_RST}")
 
     def _format_submitted_user_message_preview(self, user_input: str) -> str:
         """Format the submitted user-message scrollback preview."""
@@ -3427,7 +3434,8 @@ class HermesCLI:
                 max_iterations=self.max_turns,
                 enabled_toolsets=self.enabled_toolsets,
                 verbose_logging=self.verbose,
-                quiet_mode=not self.verbose,
+                detailed_output=self.detailed,
+                quiet_mode=not (self.verbose or self.detailed),
                 ephemeral_system_prompt=self.system_prompt if self.system_prompt else None,
                 prefill_messages=self.prefill_messages or None,
                 reasoning_config=self.reasoning_config,
@@ -6781,18 +6789,20 @@ class HermesCLI:
             print("  Prompt + TUI colors updated.")
 
     def _toggle_verbose(self):
-        """Cycle tool progress mode: off → new → all → verbose → off."""
-        cycle = ["off", "new", "all", "verbose"]
+        """Cycle tool progress mode: off → new → all → detailed → verbose → off."""
+        cycle = ["off", "new", "all", "detailed", "verbose"]
         try:
             idx = cycle.index(self.tool_progress_mode)
         except ValueError:
             idx = 2  # default to "all"
         self.tool_progress_mode = cycle[(idx + 1) % len(cycle)]
         self.verbose = self.tool_progress_mode == "verbose"
+        self.detailed = self.tool_progress_mode in ("detailed", "verbose")
 
         if self.agent:
             self.agent.verbose_logging = self.verbose
-            self.agent.quiet_mode = not self.verbose
+            self.agent.detailed_output = self.detailed
+            self.agent.quiet_mode = not (self.verbose or self.detailed)
             self.agent.reasoning_callback = self._current_reasoning_callback()
 
         # Use raw ANSI codes via _cprint so the output is routed through
@@ -6804,7 +6814,8 @@ class HermesCLI:
             "off": f"{_Colors.DIM}Tool progress: OFF{_Colors.RESET} — silent mode, just the final response.",
             "new": f"{_Colors.YELLOW}Tool progress: NEW{_Colors.RESET} — show each new tool (skip repeats).",
             "all": f"{_Colors.GREEN}Tool progress: ALL{_Colors.RESET} — show every tool call.",
-            "verbose": f"{_Colors.BOLD}{_Colors.GREEN}Tool progress: VERBOSE{_Colors.RESET} — full args, results, think blocks, and debug logs.",
+            "detailed": f"{_Colors.BOLD}{_Colors.CYAN}Tool progress: DETAILED{_Colors.RESET} — full args, results, think blocks, and assistant messages.",
+            "verbose": f"{_Colors.BOLD}{_Colors.GREEN}Tool progress: VERBOSE{_Colors.RESET} — everything from DETAILED + debug logs.",
         }
         _cprint(labels.get(self.tool_progress_mode, ""))
 

@@ -668,7 +668,7 @@ def _load_tool_progress_mode() -> str:
     if raw is True:
         return "all"
     mode = str(raw or "all").strip().lower()
-    return mode if mode in {"off", "new", "all", "verbose"} else "all"
+    return mode if mode in {"off", "new", "all", "detailed", "verbose"} else "all"
 
 
 def _load_enabled_toolsets() -> list[str] | None:
@@ -1364,6 +1364,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         credential_pool=runtime.get("credential_pool"),
         quiet_mode=True,
         verbose_logging=_load_tool_progress_mode() == "verbose",
+        detailed_output=_load_tool_progress_mode() in ("detailed", "verbose"),
         reasoning_config=_load_reasoning_config(),
         service_tier=_load_service_tier(),
         enabled_toolsets=_load_enabled_toolsets(),
@@ -2679,7 +2680,7 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 5001, str(e))
 
     if key == "verbose":
-        cycle = ["off", "new", "all", "verbose"]
+        cycle = ["off", "new", "all", "detailed", "verbose"]
         cur = (
             session.get("tool_progress_mode", _load_tool_progress_mode())
             if session
@@ -2701,6 +2702,7 @@ def _(rid, params: dict) -> dict:
             agent = session.get("agent")
             if agent is not None:
                 agent.verbose_logging = nv == "verbose"
+                agent.detailed_output = nv in ("detailed", "verbose")
         return _ok(rid, {"key": key, "value": nv})
 
     if key == "yolo":
