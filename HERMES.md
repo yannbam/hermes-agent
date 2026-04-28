@@ -54,6 +54,8 @@ git checkout dev-stable-v0.X.0
 # ⚠️ "rebooting" the `hermes` system autonomously isn't yet solved and defered to later
 ```
 
+**After promotion: NO venv work needed.** Both venvs are **editable installs** (`pip install -e`), meaning `site-packages` contains a symlink to the source directory. When you `git checkout` a new tag in the stable clone, the `hermes` binary immediately picks up the new code — no venv recreation, no pip reinstall. **VENV RECREATION IS FORBIDDEN** — destroying the venv that runs the currently-executing Hermes process would crash it mid-flight (the Python binary and all modules vanish). The standard `python3 -m venv` venvs are not relocatable anyway; if one ever truly needs recreation, do it from a separate terminal during downtime.
+
 ## Tag Convention
 
 ```
@@ -79,6 +81,7 @@ Completely separate from upstream version tags (`v2026.4.23`, etc.). Never touch
    ```
 6. **Promote deliberately.** A bad `dev-stable-v*` tag breaks your own runtime.
 7. **Jan merges hermes-dev → main.** Do not PR or push to `main` yourself.
+8. **NEVER recreate venvs during promotion.** Both venvs are editable installs — a `git checkout` in the source dir instantly updates the running code. Destroying the venv that runs the current Hermes process would crash it. If venv recreation is ever truly needed, do it from a separate terminal during downtime.
 
 ## Upstream Updates (via Jan's main)
 
