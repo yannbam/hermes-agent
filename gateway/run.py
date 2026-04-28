@@ -7140,7 +7140,7 @@ class GatewayRunner:
 
         Gated by ``display.tool_progress_command`` in config.yaml (default off).
         When enabled, cycles the tool progress mode through off → new → all →
-        verbose → off for the *current platform*.  The setting is saved to
+        detailed → verbose → off for the *current platform*.  The setting is saved to
         ``display.platforms.<platform>.tool_progress`` so each channel can
         have its own verbosity level independently.
         """
@@ -7167,12 +7167,13 @@ class GatewayRunner:
             )
 
         # --- cycle mode (per-platform) ----------------------------------------
-        cycle = ["off", "new", "all", "verbose"]
+        cycle = ["off", "new", "all", "detailed", "verbose"]
         descriptions = {
             "off": "⚙️ Tool progress: **OFF** — no tool activity shown.",
             "new": "⚙️ Tool progress: **NEW** — shown when tool changes (preview length: `display.tool_preview_length`, default 40).",
             "all": "⚙️ Tool progress: **ALL** — every tool call shown (preview length: `display.tool_preview_length`, default 40).",
-            "verbose": "⚙️ Tool progress: **VERBOSE** — every tool call with full arguments.",
+            "detailed": "⚙️ Tool progress: **DETAILED** — full args, results, think blocks, and assistant messages.",
+            "verbose": "⚙️ Tool progress: **VERBOSE** — everything from DETAILED + debug logs.",
         }
 
         # Read current effective mode for this platform via the resolver
@@ -9631,8 +9632,8 @@ class GatewayRunner:
             from agent.display import get_tool_emoji
             emoji = get_tool_emoji(tool_name, default="⚙️")
             
-            # Verbose mode: show detailed arguments, respects tool_preview_length
-            if progress_mode == "verbose":
+            # Verbose/detailed mode: show detailed arguments, respects tool_preview_length
+            if progress_mode in ("verbose", "detailed"):
                 if args:
                     from agent.display import get_tool_preview_max_len
                     _pl = get_tool_preview_max_len()
