@@ -319,6 +319,7 @@ class TestReasoningPreviewBuffering(unittest.TestCase):
 
         cli._on_reasoning(" about this.\n")
 
+        # 1 call: thinking line only (no divider on boundary flush)
         self.assertEqual(mock_cprint.call_count, 1)
         rendered = mock_cprint.call_args[0][0]
         self.assertIn("[thinking] Let me think about this.", rendered)
@@ -337,8 +338,9 @@ class TestReasoningPreviewBuffering(unittest.TestCase):
 
         cli._on_thinking("")
 
-        self.assertEqual(mock_cprint.call_count, 1)
-        rendered = mock_cprint.call_args[0][0]
+        # 2 calls: thinking line + divider
+        self.assertEqual(mock_cprint.call_count, 2)
+        rendered = mock_cprint.call_args_list[0][0][0]
         self.assertIn("[thinking] see how this plays out", rendered)
 
     @patch("cli._cprint")
@@ -350,7 +352,8 @@ class TestReasoningPreviewBuffering(unittest.TestCase):
             "First line\nstill same thought\n\n\nSecond paragraph with more detail here."
         )
 
-        rendered = mock_cprint.call_args[0][0]
+        # 1 call: thinking line only (no divider on direct emit)
+        rendered = mock_cprint.call_args_list[0][0][0]
         plain = re.sub(r"\x1b\[[0-9;]*m", "", rendered)
         normalized = " ".join(plain.split())
         self.assertIn("[thinking] First line still same thought", plain)
@@ -367,13 +370,14 @@ class TestReasoningPreviewBuffering(unittest.TestCase):
 
 
 class TestReasoningDisplayModeSelection(unittest.TestCase):
-    def _make_cli(self, *, show_reasoning=False, streaming_enabled=False, verbose=False):
+    def _make_cli(self, *, show_reasoning=False, streaming_enabled=False, verbose=False, detailed=False):
         from cli import HermesCLI
 
         cli = HermesCLI.__new__(HermesCLI)
         cli.show_reasoning = show_reasoning
         cli.streaming_enabled = streaming_enabled
         cli.verbose = verbose
+        cli.detailed = detailed
         cli._stream_reasoning_delta = lambda text: ("stream", text)
         cli._on_reasoning = lambda text: ("preview", text)
         return cli
