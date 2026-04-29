@@ -347,6 +347,72 @@ class TestSkillView:
         assert result["name"] == "my-skill"
         assert "Step 1" in result["content"]
 
+    def test_view_resolves_frontmatter_name_advertised_by_skills_list(self, tmp_path):
+        skill_dir = tmp_path / "creative" / "creative-ideation"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: ideation\n"
+            "description: Constraint-driven ideas.\n"
+            "---\n\n"
+            "# Creative Ideation\n\n"
+            "Step 1: Think sideways.\n"
+        )
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            listed = json.loads(skills_list(category="creative"))
+            raw = skill_view("ideation")
+
+        result = json.loads(raw)
+        assert listed["skills"][0]["name"] == "ideation"
+        assert result["success"] is True
+        assert result["name"] == "ideation"
+        assert "Think sideways" in result["content"]
+
+    def test_view_rejects_category_colon_for_local_skills(self, tmp_path):
+        skill_dir = tmp_path / "creative" / "creative-ideation"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: ideation\n"
+            "description: Constraint-driven ideas.\n"
+            "---\n\n"
+            "# Creative Ideation\n\n"
+            "Step 1: Think sideways.\n"
+        )
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            by_frontmatter_name = json.loads(skill_view("ideation"))
+            by_category_frontmatter = json.loads(skill_view("creative:ideation"))
+            by_category_dir = json.loads(skill_view("creative:creative-ideation"))
+
+        assert by_frontmatter_name["success"] is True
+        assert by_frontmatter_name["name"] == "ideation"
+        assert by_category_frontmatter["success"] is False
+        assert by_category_dir["success"] is False
+
+    def test_view_rejects_category_path_and_directory_slug_when_name_differs(self, tmp_path):
+        skill_dir = tmp_path / "creative" / "creative-ideation"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: ideation\n"
+            "description: Constraint-driven ideas.\n"
+            "---\n\n"
+            "# Creative Ideation\n\n"
+            "Step 1: Think sideways.\n"
+        )
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            by_frontmatter_name = json.loads(skill_view("ideation"))
+            by_category_path = json.loads(skill_view("creative/creative-ideation"))
+            by_directory_slug = json.loads(skill_view("creative-ideation"))
+
+        assert by_frontmatter_name["success"] is True
+        assert by_frontmatter_name["name"] == "ideation"
+        assert by_category_path["success"] is False
+        assert by_directory_slug["success"] is False
+
     def test_skill_view_applies_template_vars(self, tmp_path):
         with (
             patch("tools.skills_tool.SKILLS_DIR", tmp_path),
