@@ -865,9 +865,15 @@ def skill_view(
         JSON string with skill content or error message
     """
     try:
+        local_lookup_names = [name]
+        plugin_missing_response = None
+
         # ── Qualified name dispatch (plugin skills) ──────────────────
-        # Names containing ':' are routed to the plugin skill registry.
-        # Bare names fall through to the existing flat-tree scan below.
+        # Names containing ':' are first routed to the plugin skill registry.
+        # If no plugin skill matches, the same syntax is also accepted as a
+        # category-qualified local skill alias: "creative:creative-ideation"
+        # maps to "creative/creative-ideation". This keeps plugin exact matches
+        # authoritative while making local category aliases ergonomic.
         if ":" in name:
             from agent.skill_utils import is_valid_namespace, parse_qualified_name
             from hermes_cli.plugins import discover_plugins, get_plugin_manager
@@ -913,10 +919,12 @@ def skill_view(
                     session_id=task_id,
                 )
 
-            # Plugin exists but this specific skill is missing?
+            # Plugin exact match not found. Preserve the plugin-specific
+            # diagnostic for later, but still allow a local category alias with
+            # the same qualified text to resolve before returning not-found.
             available = pm.list_plugin_skills(namespace)
             if available:
-                return json.dumps(
+                plugin_missing_response = json.dumps(
                     {
                         "success": False,
                         "error": f"Skill '{bare}' not found in plugin '{namespace}'.",
@@ -925,8 +933,12 @@ def skill_view(
                     },
                     ensure_ascii=False,
                 )
-            # Plugin itself not found — fall through to flat-tree scan
-            # which will return a normal "not found" with suggestions.
+
+            # Fall through to local skill scan. Treat namespace:skill as a
+            # local category/skill alias there.
+            category_alias = f"{namespace}/{bare}"
+            if category_alias not in local_lookup_names:
+                local_lookup_names.append(category_alias)
 
         from agent.skill_utils import get_external_skills_dirs
 
@@ -950,23 +962,61 @@ def skill_view(
 
         # Search all dirs: local first, then external (first match wins)
         for search_dir in all_dirs:
-            # Try direct path first (e.g., "mlops/axolotl")
-            direct_path = search_dir / name
-            if direct_path.is_dir() and (direct_path / "SKILL.md").exists():
-                skill_dir = direct_path
-                skill_md = direct_path / "SKILL.md"
-                break
-            elif direct_path.with_suffix(".md").exists():
-                skill_md = direct_path.with_suffix(".md")
+            for lookup_name in local_lookup_names:
+                # Try direct path first (e.g., "mlops/axolotl")
+                direct_path = search_dir / lookup_name
+                if direct_path.is_dir() and (direct_path / "SKILL.md").exists():
+                    skill_dir = direct_path
+                    skill_md = direct_path / "SKILL.md"
+                    break
+                elif direct_path.with_suffix(".md").exists():
+                    skill_md = direct_path.with_suffix(".md")
+                    break
+            if skill_md:
                 break
 
-        # Search by directory name across all dirs
+        # Search by directory name and frontmatter name across all dirs.
+        # skills_list() advertises frontmatter "name", so skill_view() must
+        # accept that same advertised name even when the directory slug differs.
         if not skill_md:
             for search_dir in all_dirs:
                 from agent.skill_utils import iter_skill_index_files
 
                 for found_skill_md in iter_skill_index_files(search_dir, "SKILL.md"):
-                    if found_skill_md.parent.name == name:
+                    try:
+                        rel_parent = found_skill_md.parent.relative_to(search_dir)
+                        rel_dir = rel_parent.as_posix()
+                        rel_parts = rel_parent.parts
+                    except ValueError:
+                        rel_dir = found_skill_md.parent.name
+                        rel_parts = (found_skill_md.parent.name,)
+
+                    category = rel_parts[0] if len(rel_parts) >= 2 else None
+                    dir_name = found_skill_md.parent.name
+                    frontmatter_name = dir_name
+                    try:
+                        content_preview = found_skill_md.read_text(encoding="utf-8")[:4000]
+                        found_frontmatter, _ = _parse_frontmatter(content_preview)
+                        frontmatter_name = str(found_frontmatter.get("name") or dir_name)
+                    except Exception:
+                        pass
+
+                    matched = False
+                    for lookup_name in local_lookup_names:
+                        normalized_lookup = lookup_name.replace(":", "/", 1)
+                        if normalized_lookup in {rel_dir, dir_name, frontmatter_name}:
+                            matched = True
+                            break
+                        if "/" in normalized_lookup:
+                            lookup_category, _, lookup_bare = normalized_lookup.partition("/")
+                            if (
+                                category == lookup_category
+                                and lookup_bare in {dir_name, frontmatter_name}
+                            ):
+                                matched = True
+                                break
+
+                    if matched:
                         skill_dir = found_skill_md.parent
                         skill_md = found_skill_md
                         break
@@ -984,6 +1034,8 @@ def skill_view(
                     break
 
         if not skill_md or not skill_md.exists():
+            if plugin_missing_response is not None:
+                return plugin_missing_response
             available = [s["name"] for s in _sort_skills(_find_all_skills())[:20]]
             return json.dumps(
                 {

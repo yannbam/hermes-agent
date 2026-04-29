@@ -347,6 +347,56 @@ class TestSkillView:
         assert result["name"] == "my-skill"
         assert "Step 1" in result["content"]
 
+    def test_view_resolves_frontmatter_name_advertised_by_skills_list(self, tmp_path):
+        skill_dir = tmp_path / "creative" / "creative-ideation"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: ideation\n"
+            "description: Constraint-driven ideas.\n"
+            "---\n\n"
+            "# Creative Ideation\n\n"
+            "Step 1: Think sideways.\n"
+        )
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            listed = json.loads(skills_list(category="creative"))
+            raw = skill_view("ideation")
+
+        result = json.loads(raw)
+        assert listed["skills"][0]["name"] == "ideation"
+        assert result["success"] is True
+        assert result["name"] == "ideation"
+        assert "Think sideways" in result["content"]
+
+    def test_view_resolves_category_colon_directory_alias(self, tmp_path):
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(tmp_path, "creative-ideation", category="creative")
+            raw = skill_view("creative:creative-ideation")
+
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert result["name"] == "creative-ideation"
+
+    def test_view_resolves_category_colon_frontmatter_alias(self, tmp_path):
+        skill_dir = tmp_path / "creative" / "creative-ideation"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: ideation\n"
+            "description: Constraint-driven ideas.\n"
+            "---\n\n"
+            "# Creative Ideation\n\n"
+            "Step 1: Think sideways.\n"
+        )
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            raw = skill_view("creative:ideation")
+
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert result["name"] == "ideation"
+
     def test_skill_view_applies_template_vars(self, tmp_path):
         with (
             patch("tools.skills_tool.SKILLS_DIR", tmp_path),
