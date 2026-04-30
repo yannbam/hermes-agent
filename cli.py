@@ -1901,13 +1901,17 @@ class HermesCLI:
         # show_reasoning: display model thinking/reasoning before the response
         self.show_reasoning = CLI_CONFIG["display"].get("show_reasoning", False)
         # busy_input_mode: "interrupt" (Enter interrupts current run),
-        # "queue" (Enter queues for next turn), or "steer" (Enter injects
-        # mid-run via /steer, arriving after the next tool call).
+        # "queue" (Enter queues for next turn), "steer" (Enter injects
+        # mid-run via /steer, arriving after the next tool call), or
+        # "pause" (Enter asks the agent to pause before the next model call
+        # without cancelling any in-flight tool).
         _bim = str(CLI_CONFIG["display"].get("busy_input_mode", "interrupt")).strip().lower()
         if _bim == "queue":
             self.busy_input_mode = "queue"
         elif _bim == "steer":
             self.busy_input_mode = "steer"
+        elif _bim == "pause":
+            self.busy_input_mode = "pause"
         else:
             self.busy_input_mode = "interrupt"
 
@@ -2137,6 +2141,7 @@ class HermesCLI:
         # These must exist before any direct chat() call because single-query
         # mode does not go through run().
         self._agent_running = False
+        self._agent_accepting_pause = False
         self._pending_input = queue.Queue()
         self._interrupt_queue = queue.Queue()
         self._should_exit = False
@@ -5534,17 +5539,14 @@ class HermesCLI:
         except Exception:
             return False
 
-    def _should_handle_steer_command_inline(self, text: str, has_images: bool = False) -> bool:
-        """Return True when /steer should be dispatched immediately while the agent is running.
+    def _should_handle_running_command_inline(self, text: str, has_images: bool = False) -> bool:
+        """Return True when a command must run immediately while the agent is busy.
 
-        /steer MUST bypass the normal _pending_input → process_loop path when
-        the agent is active, because process_loop is blocked inside
-        self.chat() for the duration of the run.  By the time the queued
-        command is pulled from _pending_input, _agent_running has already
-        flipped back to False, and process_command() takes the idle
-        fallback — delivering the steer as a next-turn message instead of
-        injecting it mid-run.  Dispatching inline on the UI thread calls
-        agent.steer() directly, which is thread-safe (uses _pending_steer_lock).
+        Commands like /steer and /pause MUST bypass the normal
+        _pending_input → process_loop path when the agent is active, because
+        process_loop is blocked inside self.chat() for the duration of the
+        run. Queuing them would only execute after the run finishes, which
+        defeats their mid-run control semantics.
         """
         if not text or has_images or not _looks_like_slash_command(text):
             return False
@@ -5554,9 +5556,74 @@ class HermesCLI:
             from hermes_cli.commands import resolve_command
             base = text.split(None, 1)[0].lower().lstrip('/')
             cmd = resolve_command(base)
+            return bool(cmd and cmd.name in {"steer", "pause"})
+        except Exception:
+            return False
+
+    def _should_handle_steer_command_inline(self, text: str, has_images: bool = False) -> bool:
+        """Backward-compatible wrapper for tests/callers using the old name."""
+        if not self._should_handle_running_command_inline(text, has_images=has_images):
+            return False
+        try:
+            from hermes_cli.commands import resolve_command
+            base = text.split(None, 1)[0].lower().lstrip('/')
+            cmd = resolve_command(base)
             return bool(cmd and cmd.name == "steer")
         except Exception:
             return False
+
+    def _request_agent_pause(self) -> bool:
+        """Request a soft pause on the active agent, if any."""
+        if not getattr(self, "_agent_running", False) or self.agent is None or not hasattr(self.agent, "pause_after_tool"):
+            _cprint("  No agent running; nothing to pause.")
+            return False
+        if getattr(self, "_agent_accepting_pause", False) is False:
+            try:
+                if self.agent is not None and hasattr(self.agent, "resume_after_pause"):
+                    self.agent.resume_after_pause()
+            except Exception:
+                pass
+            _cprint("  Agent has finished its model/tool loop; nothing to pause.")
+            return False
+        try:
+            accepted = self.agent.pause_after_tool()
+        except Exception as exc:
+            _cprint(f"  Pause failed: {exc}")
+            return False
+        if accepted:
+            _cprint("  ⏸️ Pause requested — Hermes will pause before the next model call. Press Ctrl+` to resume.")
+        else:
+            _cprint("  Pause was already requested. Press Ctrl+` to resume.")
+        return bool(accepted)
+
+    def _resume_agent_pause(self) -> bool:
+        """Lift a pending/active soft pause without sending user text."""
+        if self.agent is None or not hasattr(self.agent, "resume_after_pause"):
+            _cprint("  No pause-capable agent is active.")
+            return False
+        try:
+            resumed = self.agent.resume_after_pause()
+        except Exception as exc:
+            _cprint(f"  Resume failed: {exc}")
+            return False
+        if resumed:
+            _cprint("  ▶️ Pause lifted — Hermes may continue.")
+        else:
+            _cprint("  No pause was pending.")
+        return bool(resumed)
+
+    def _handle_busy_pause_submission(self, payload, text: str, images: list) -> None:
+        """Handle Enter while busy_input_mode= pause.
+
+        Empty Enter acts as a pure control signal. Non-empty drafts or attached
+        images are preserved by queueing them for the next turn after the pause
+        request, so a pause hotkey can never silently eat user input.
+        """
+        HermesCLI._request_agent_pause(self)
+        if text or images:
+            self._pending_input.put(payload)
+            preview = text if text else f"[{len(images)} image{'s' if len(images) != 1 else ''} attached]"
+            _cprint(f"  Queued draft for the next turn: {preview[:80]}{'...' if len(preview) > 80 else ''}")
 
     def _output_console(self):
         """Use prompt_toolkit-safe Rich rendering once the TUI is live."""
@@ -6262,6 +6329,8 @@ class HermesCLI:
                 # No active run — treat as a normal next-turn message.
                 self._pending_input.put(payload)
                 _cprint(f"  No agent running; queued as next turn: {payload[:80]}{'...' if len(payload) > 80 else ''}")
+        elif canonical == "pause":
+            HermesCLI._request_agent_pause(self)
         elif canonical == "skin":
             self._handle_skin_command(cmd_original)
         elif canonical == "voice":
@@ -6922,6 +6991,7 @@ class HermesCLI:
             /busy status        Show current busy input mode
             /busy queue         Queue input for the next turn instead of interrupting
             /busy steer         Inject Enter mid-run via /steer (after next tool call)
+            /busy pause         Pause after the next tool call without cancelling it
             /busy interrupt     Interrupt the current run on Enter (default)
         """
         parts = cmd.strip().split(maxsplit=1)
@@ -6931,16 +7001,18 @@ class HermesCLI:
                 _behavior = "queues for next turn"
             elif self.busy_input_mode == "steer":
                 _behavior = "steers into current run (after next tool call)"
+            elif self.busy_input_mode == "pause":
+                _behavior = "pauses after the next tool call"
             else:
                 _behavior = "interrupts current run"
             _cprint(f"  {_DIM}Enter while busy: {_behavior}{_RST}")
-            _cprint(f"  {_DIM}Usage: /busy [queue|steer|interrupt|status]{_RST}")
+            _cprint(f"  {_DIM}Usage: /busy [queue|steer|pause|interrupt|status]{_RST}")
             return
 
         arg = parts[1].strip().lower()
-        if arg not in {"queue", "interrupt", "steer"}:
+        if arg not in {"queue", "interrupt", "steer", "pause"}:
             _cprint(f"  {_DIM}(._.) Unknown argument: {arg}{_RST}")
-            _cprint(f"  {_DIM}Usage: /busy [queue|steer|interrupt|status]{_RST}")
+            _cprint(f"  {_DIM}Usage: /busy [queue|steer|pause|interrupt|status]{_RST}")
             return
 
         self.busy_input_mode = arg
@@ -6949,6 +7021,8 @@ class HermesCLI:
                 behavior = "Enter will queue follow-up input while Hermes is busy."
             elif arg == "steer":
                 behavior = "Enter will steer your message into the current run (after the next tool call)."
+            elif arg == "pause":
+                behavior = "Enter will pause after the next tool call without cancelling it."
             else:
                 behavior = "Enter will interrupt the current run while Hermes is busy."
             _cprint(f"  {_ACCENT}✓ Busy input mode set to '{arg}' (saved to config){_RST}")
@@ -8554,6 +8628,17 @@ class HermesCLI:
                         "error": _summary,
                     }
                 finally:
+                    # The model/tool loop is over as soon as run_conversation()
+                    # returns.  Flip this in the worker thread before the CLI
+                    # tail work (title generation, rendering, cleanup) can race
+                    # with Escape or /pause and create a stale pause request for
+                    # the next turn.
+                    self._agent_accepting_pause = False
+                    try:
+                        if self.agent is not None and hasattr(self.agent, "resume_after_pause"):
+                            self.agent.resume_after_pause()
+                    except Exception:
+                        pass
                     # Clear thread-local callbacks so a reused thread doesn't
                     # hold stale references to a disposed CLI instance.
                     try:
@@ -8570,6 +8655,7 @@ class HermesCLI:
             # finishes; reset on the next turn.
             self._prompt_start_time = time.time()
             self._prompt_duration = 0.0
+            self._agent_accepting_pause = True
             agent_thread = threading.Thread(target=run_agent, daemon=True)
             agent_thread.start()
 
@@ -8651,6 +8737,7 @@ class HermesCLI:
             if self._prompt_start_time is not None:
                 self._prompt_duration = max(0.0, time.time() - self._prompt_start_time)
                 self._prompt_start_time = None
+            self._agent_accepting_pause = False
 
             # Proactively clean up async clients whose event loop is dead.
             # The agent thread may have created AsyncOpenAI clients bound
@@ -9183,6 +9270,7 @@ class HermesCLI:
         
         # State for async operation
         self._agent_running = False
+        self._agent_accepting_pause = False
         self._pending_input = queue.Queue()     # For normal input (commands + new queries)
         self._interrupt_queue = queue.Queue()   # For messages typed while agent is running
         self._should_exit = False
@@ -9334,7 +9422,8 @@ class HermesCLI:
             # --- Normal input routing ---
             text = event.app.current_buffer.text.strip()
             has_images = bool(self._attached_images)
-            if text or has_images:
+            pause_empty_enter = self._agent_running and self.busy_input_mode == "pause"
+            if text or has_images or pause_empty_enter:
                 # Handle /model directly on the UI thread so interactive pickers
                 # can safely use prompt_toolkit terminal handoff helpers.
                 if self._should_handle_model_command_inline(text, has_images=has_images):
@@ -9345,13 +9434,10 @@ class HermesCLI:
                     event.app.current_buffer.reset(append_to_history=True)
                     return
 
-                # Handle /steer while the agent is running immediately on the
-                # UI thread.  Queuing through _pending_input would deadlock the
-                # steer until after the agent loop finishes (process_loop is
-                # blocked inside self.chat()), which turns /steer into a
-                # post-run next-turn message — defeating mid-run injection.
-                # agent.steer() is thread-safe (holds _pending_steer_lock).
-                if self._should_handle_steer_command_inline(text, has_images=has_images):
+                # Handle mid-run control commands immediately on the UI
+                # thread. Queuing through _pending_input would delay them until
+                # after the agent loop finishes, defeating their purpose.
+                if self._should_handle_running_command_inline(text, has_images=has_images):
                     self.process_command(text)
                     event.app.current_buffer.reset(append_to_history=True)
                     return
@@ -9362,7 +9448,10 @@ class HermesCLI:
                 event.app.invalidate()
                 # Bundle text + images as a tuple when images are present
                 payload = (text, images) if images else text
-                if self._agent_running and not (text and _looks_like_slash_command(text)):
+                if self._agent_running and (
+                    not (text and _looks_like_slash_command(text))
+                    or self.busy_input_mode == "pause"
+                ):
                     _effective_mode = self.busy_input_mode
                     if _effective_mode == "steer":
                         # Route Enter through /steer — inject mid-run after the
@@ -9390,6 +9479,8 @@ class HermesCLI:
                         self._pending_input.put(payload)
                         preview = text if text else f"[{len(images)} image{'s' if len(images) != 1 else ''} attached]"
                         _cprint(f"  Queued for the next turn: {preview[:80]}{'...' if len(preview) > 80 else ''}")
+                    elif _effective_mode == "pause":
+                        self._handle_busy_pause_submission(payload, text, images)
                     elif _effective_mode == "interrupt":
                         self._interrupt_queue.put(payload)
                         # Debug: log to file when message enters interrupt queue
@@ -9422,6 +9513,28 @@ class HermesCLI:
                     self._pending_input.put(payload)
                 event.app.current_buffer.reset(append_to_history=True)
         
+        @kb.add('escape')
+        def handle_escape_pause(event):
+            """Escape requests a soft pause while the agent is running.
+
+            Registered without eager=True so multi-key Escape chords such as
+            Alt+Enter still get a chance to resolve first.
+            """
+            if self._agent_running:
+                self._request_agent_pause()
+                event.app.invalidate()
+
+        @kb.add('c-@')
+        def handle_resume_pause(event):
+            """Lift a soft pause without sending or queueing a message.
+
+            Ctrl+` is encoded by terminals as NUL, which prompt_toolkit exposes
+            as ``c-@``. This avoids the ambiguity of Ctrl+Escape, which many
+            terminals encode exactly like bare Escape.
+            """
+            self._resume_agent_pause()
+            event.app.invalidate()
+
         @kb.add('escape', 'enter')
         def handle_alt_enter(event):
             """Alt+Enter inserts a newline for multi-line input."""

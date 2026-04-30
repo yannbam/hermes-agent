@@ -91,6 +91,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                aliases=("q",), args_hint="<prompt>"),
     CommandDef("steer", "Inject a message after the next tool call without interrupting", "Session",
                args_hint="<prompt>"),
+    CommandDef("pause", "Pause before the next model call without cancelling tools", "Session",
+               cli_only=True),
     CommandDef("status", "Show session info", "Session"),
     CommandDef("profile", "Show active profile name and home directory", "Info"),
     CommandDef("sethome", "Set this chat as the home channel", "Session",
@@ -126,8 +128,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("voice", "Toggle voice mode", "Configuration",
                args_hint="[on|off|tts|status]", subcommands=("on", "off", "tts", "status")),
     CommandDef("busy", "Control what Enter does while Hermes is working", "Configuration",
-               cli_only=True, args_hint="[queue|steer|interrupt|status]",
-               subcommands=("queue", "steer", "interrupt", "status")),
+               cli_only=True, args_hint="[queue|steer|pause|interrupt|status]",
+               subcommands=("queue", "steer", "pause", "interrupt", "status")),
 
     # Tools & Skills
     CommandDef("tools", "Manage tools: /tools [list|disable|enable] [name...]", "Tools & Skills",
