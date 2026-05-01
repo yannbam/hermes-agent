@@ -226,13 +226,13 @@ Send any message while the agent is working to interrupt it. Key behaviors:
 
 By default, messaging a busy agent interrupts it. Other modes are available:
 
+- `interrupt` — follow-up messages interrupt the current task immediately (default).
 - `queue` — follow-up messages wait and run as the next turn after the current task finishes.
 - `steer` — follow-up messages are injected into the current run via `/steer`, arriving at the agent after the next tool call. No interrupt, no new turn. Falls back to `queue` behavior if the agent hasn't started yet.
-- `pause` — CLI-only: Enter requests a soft pause before the next model call, and any typed draft/images are queued instead of discarded.
 
 ```yaml
 display:
-  busy_input_mode: steer   # or pause, queue, or interrupt (default)
+  busy_input_mode: steer   # or queue, or interrupt (default)
 ```
 
 The first time you message a busy agent on any platform, Hermes appends a one-line reminder to the busy-ack explaining the knob (`"💡 First-time tip — …"`). The reminder fires once per install — a flag under `onboarding.seen.busy_input_prompt` latches it. Delete that key to see the tip again.

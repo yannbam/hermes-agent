@@ -115,67 +115,7 @@ def test_resume_agent_pause_lifts_pending_pause():
     assert "Pause lifted" in printed
 
 
-def test_busy_pause_submission_queues_non_empty_draft():
-    cli_mod = _import_cli()
-    queued = []
-    agent = SimpleNamespace(pause_after_tool=Mock(return_value=True))
-    stub = SimpleNamespace(
-        _agent_running=True,
-        _agent_accepting_pause=True,
-        agent=agent,
-        _pending_input=SimpleNamespace(put=queued.append),
-    )
-
-    with patch.object(cli_mod, "_cprint") as mock_cprint:
-        cli_mod.HermesCLI._handle_busy_pause_submission(stub, "keep this", "keep this", [])
-
-    agent.pause_after_tool.assert_called_once_with()
-    assert queued == ["keep this"]
-    printed = " ".join(str(c) for c in mock_cprint.call_args_list)
-    assert "Queued draft" in printed
-
-
-def test_busy_pause_submission_empty_enter_does_not_queue_blank_message():
-    cli_mod = _import_cli()
-    queued = []
-    agent = SimpleNamespace(pause_after_tool=Mock(return_value=True))
-    stub = SimpleNamespace(
-        _agent_running=True,
-        _agent_accepting_pause=True,
-        agent=agent,
-        _pending_input=SimpleNamespace(put=queued.append),
-    )
-
-    with patch.object(cli_mod, "_cprint"):
-        cli_mod.HermesCLI._handle_busy_pause_submission(stub, "", "", [])
-
-    agent.pause_after_tool.assert_called_once_with()
-    assert queued == []
-
-
-def test_busy_pause_submission_queues_image_payload():
-    cli_mod = _import_cli()
-    queued = []
-    images = [{"path": "example.png"}]
-    payload = ("", images)
-    agent = SimpleNamespace(pause_after_tool=Mock(return_value=True))
-    stub = SimpleNamespace(
-        _agent_running=True,
-        _agent_accepting_pause=True,
-        agent=agent,
-        _pending_input=SimpleNamespace(put=queued.append),
-    )
-
-    with patch.object(cli_mod, "_cprint") as mock_cprint:
-        cli_mod.HermesCLI._handle_busy_pause_submission(stub, payload, "", images)
-
-    agent.pause_after_tool.assert_called_once_with()
-    assert queued == [payload]
-    printed = " ".join(str(c) for c in mock_cprint.call_args_list)
-    assert "image" in printed
-
-
-def test_dashboard_config_schema_includes_pause_busy_mode():
+def test_dashboard_config_schema_excludes_pause_busy_mode():
     from hermes_cli.web_server import CONFIG_SCHEMA
 
-    assert "pause" in CONFIG_SCHEMA["display.busy_input_mode"]["options"]
+    assert "pause" not in CONFIG_SCHEMA["display.busy_input_mode"]["options"]
