@@ -83,6 +83,12 @@ Completely separate from upstream version tags (`v2026.4.23`, etc.). Never touch
 7. **Jan merges hermes-dev → main.** Do not PR or push to `main` yourself.
 8. **NEVER recreate venvs during promotion.** Both venvs are editable installs — a `git checkout` in the source dir instantly updates the running code. Destroying the venv that runs the current Hermes process would crash it. If venv recreation is ever truly needed, do it from a separate terminal during downtime.
 
+## Fork-specific Dependency Pins
+
+These are deliberate divergences from upstream. Preserve them when merging upstream changes.
+
+- **numpy `<2.4`** (in `pyproject.toml` `[project.optional-dependencies] voice`) — NumPy 2.4.0 raised the CPU baseline to `X86_V2` (SSE4.1 required). gaia's CPU only has SSE/SSE2/SSE3, so 2.4.x SIGILLs on import. Additionally, `tests/tools/test_tts_kittentts.py` replaces `import numpy as np; np.zeros(…)` with a plain `[0.0] * 48000` list to avoid crashing pytest collection on the same hardware.
+
 ## Upstream Updates (via Jan's main)
 
 Upstream (NousResearch/hermes-agent) updates flow through jan's `main` branch. Jan regularly merges upstream into `main`. When `main` is ahead of `hermes-dev`, merge those changes into `hermes-dev`. You do NOT need an `upstream` remote — fetch from `origin main` instead. This avoids version drift between upstream release tags and our dev branch.
@@ -94,6 +100,10 @@ Upstream (NousResearch/hermes-agent) updates flow through jan's `main` branch. J
 | Bad commit on `hermes-dev` | `git checkout <good-commit> && git branch -f hermes-dev && git checkout hermes-dev && git push origin +hermes-dev` |
 | Bad `dev-stable-v*` tag | Tag the correct commit, checkout in stable clone |
 | Corrupted stable clone | Re-clone at the correct tag |
+
+## hermes-agent skill
+
+Before working in this repo always first load the hermes-agent skill using your skill_view tool. This will give you more context about the local setup and workflow on this machine.
 
 ## AGENTS.md
 

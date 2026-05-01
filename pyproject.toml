@@ -51,7 +51,7 @@ voice = [
   # so keep it out of the base install for source-build packagers like Homebrew.
   "faster-whisper>=1.0.0,<2",
   "sounddevice>=0.4.6,<1",
-  "numpy>=1.24.0,<3",
+  "numpy>=1.24.0,<2.4",
 ]
 pty = [
   "ptyprocess>=0.7.0,<1; sys_platform != 'win32'",

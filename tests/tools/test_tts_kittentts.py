@@ -3,7 +3,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 
@@ -26,8 +25,10 @@ def clear_kittentts_cache():
 def mock_kittentts_module():
     """Inject a fake kittentts + soundfile module that return stub objects."""
     fake_model = MagicMock()
-    # 24kHz float32 PCM at ~2s of silence
-    fake_model.generate.return_value = np.zeros(48000, dtype=np.float32)
+    # 24kHz float32 PCM at ~2s of silence — use plain list (avoid numpy import
+    # crashing on CPUs without AVX support, since this runs at module level
+    # during pytest collection).
+    fake_model.generate.return_value = [0.0] * 48000
     fake_cls = MagicMock(return_value=fake_model)
     fake_kittentts = MagicMock()
     fake_kittentts.KittenTTS = fake_cls
