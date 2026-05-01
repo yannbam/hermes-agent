@@ -462,6 +462,50 @@ tool_output:
   max_lines: 500
 ```
 
+## Tool Access Control
+
+Control which tools the agent can use — globally and per-platform.
+
+### Per-Platform Toolsets
+
+Choose which toolsets are available on each messaging platform (CLI, Telegram, Discord, etc.):
+
+```yaml
+platform_toolsets:
+  cli: [web, terminal, file, skills, todo, tts, cronjob]
+  telegram: [web, terminal, file]
+```
+
+Use `hermes tools` for an interactive curses UI to manage these.
+
+### Per-Tool Blacklisting
+
+Disable specific individual tools without removing the entire toolset they belong to. The `disabled_tools` key accepts a list of tool names:
+
+```yaml
+disabled_tools:
+  - search_files
+  - web_search
+```
+
+This removes `search_files` from the `file` toolset and `web_search` from the `web` toolset, while keeping the remaining tools in those toolsets (`read_file`, `write_file`, `patch`, `web_extract`) available.
+
+The equivalent CLI flag for a single session is `--disable-tools`:
+
+```bash
+hermes chat --disable-tools search_files,web_search
+```
+
+The CLI flag overrides the config value when both are present.
+
+```yaml
+# Apply per-session override:
+#   hermes chat --disable-tools search_files
+#
+# Or persist globally:
+disabled_tools: []
+```
+
 ## Git Worktree Isolation
 
 Enable isolated git worktrees for running multiple agents in parallel on the same repo:

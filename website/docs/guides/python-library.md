@@ -96,7 +96,7 @@ result = agent.run_conversation(
 
 ## Configuring Tools
 
-Control which toolsets the agent has access to using `enabled_toolsets` or `disabled_toolsets`:
+Control which tools the agent has access to using `enabled_toolsets`, `disabled_toolsets`, or `disabled_tools`:
 
 ```python
 # Only enable web tools (browsing, search)
@@ -112,10 +112,17 @@ agent = AIAgent(
     disabled_toolsets=["terminal"],
     quiet_mode=True,
 )
+
+# Enable all toolsets but disable specific tools individually
+agent = AIAgent(
+    model="anthropic/claude-sonnet-4",
+    disabled_tools=["search_files", "web_search"],
+    quiet_mode=True,
+)
 ```
 
 :::tip
-Use `enabled_toolsets` when you want a minimal, locked-down agent (e.g., only web search for a research bot). Use `disabled_toolsets` when you want most capabilities but need to restrict specific ones (e.g., no terminal access in a shared environment).
+Use `enabled_toolsets` when you want a minimal, locked-down agent (e.g., only web search for a research bot). Use `disabled_toolsets` when you want most capabilities but need to restrict specific ones (e.g., no terminal access in a shared environment). Use `disabled_tools` for fine-grained control — blacklist individual tools without losing the rest of their toolset.
 :::
 
 ---
@@ -314,6 +321,7 @@ print(review)
 | `quiet_mode` | `bool` | `False` | Suppress CLI output |
 | `enabled_toolsets` | `List[str]` | `None` | Whitelist specific toolsets |
 | `disabled_toolsets` | `List[str]` | `None` | Blacklist specific toolsets |
+| `disabled_tools` | `List[str]` | `None` | Blacklist individual tools (e.g. `["search_files"]`). Applied after toolset resolution — finer-grained than `disabled_toolsets`. |
 | `save_trajectories` | `bool` | `False` | Save conversations to JSONL |
 | `ephemeral_system_prompt` | `str` | `None` | Custom system prompt (not saved to trajectories) |
 | `max_iterations` | `int` | `90` | Max tool-calling iterations per conversation |

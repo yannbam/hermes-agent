@@ -85,6 +85,7 @@ Common options:
 | `-q`, `--query "..."` | One-shot, non-interactive prompt. |
 | `-m`, `--model <model>` | Override the model for this run. |
 | `-t`, `--toolsets <csv>` | Enable a comma-separated set of toolsets. |
+| `--disable-tools <csv>` | Blacklist specific individual tools (e.g. `search_files,web_search`). Filters after toolset resolution — disables the tool without dropping the entire toolset. |
 | `--provider <provider>` | Force a provider: `auto`, `openrouter`, `nous`, `openai-codex`, `copilot-acp`, `copilot`, `anthropic`, `gemini`, `google-gemini-cli`, `huggingface`, `zai`, `kimi-coding`, `kimi-coding-cn`, `minimax`, `minimax-cn`, `kilocode`, `xiaomi`, `arcee`, `alibaba`, `deepseek`, `nvidia`, `ollama-cloud`, `xai` (alias `grok`), `qwen-oauth`, `bedrock`, `opencode-zen`, `opencode-go`, `ai-gateway`, `azure-foundry`. |
 | `-s`, `--skills <name>` | Preload one or more skills for the session (can be repeated or comma-separated). |
 | `-v`, `--verbose` | Verbose output. |
@@ -107,6 +108,7 @@ hermes
 hermes chat -q "Summarize the latest PRs"
 hermes chat --provider openrouter --model anthropic/claude-sonnet-4.6
 hermes chat --toolsets web,terminal,skills
+hermes chat --disable-tools search_files -v   # verbose, without the search_files tool
 hermes chat --quiet -q "Return only JSON"
 hermes chat --worktree -q "Review this repo and open a PR"
 hermes chat --ignore-user-config --ignore-rules -q "Repro without my personal setup"

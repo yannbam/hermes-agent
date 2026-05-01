@@ -48,6 +48,21 @@ Or in-session:
 /tools enable rl
 ```
 
+### Per-tool blacklisting
+
+For finer control than toolset-level enable/disable, you can blacklist individual tools without removing their entire toolset:
+
+```bash
+# CLI flag (per-session):
+hermes chat --disable-tools search_files,web_search
+
+# Config (persistent):
+# disabled_tools:
+#   - search_files
+```
+
+This removes `search_files` from the `file` toolset while keeping `read_file`, `write_file`, and `patch`. Applied after toolset resolution.
+
 ## Core Toolsets
 
 | Toolset | Tools | Purpose |

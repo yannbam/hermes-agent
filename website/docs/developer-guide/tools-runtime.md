@@ -103,7 +103,7 @@ Toolsets are named bundles of tools. Hermes resolves them through:
 
 ### How `get_tool_definitions()` filters tools
 
-The main entry point is `model_tools.get_tool_definitions(enabled_toolsets, disabled_toolsets, quiet_mode)`:
+The main entry point is `model_tools.get_tool_definitions(enabled_toolsets, disabled_toolsets, disabled_tools, quiet_mode)`:
 
 1. **If `enabled_toolsets` is provided** — only tools from those toolsets are included. Each toolset name is resolved via `resolve_toolset()` which expands composite toolsets into individual tool names.
 
@@ -111,9 +111,11 @@ The main entry point is `model_tools.get_tool_definitions(enabled_toolsets, disa
 
 3. **If neither** — include all known toolsets.
 
-4. **Registry filtering** — the resolved tool name set is passed to `registry.get_definitions()`, which applies `check_fn` filtering and returns OpenAI-format schemas.
+4. **If `disabled_tools` is provided** — after toolset resolution, filter out individual tool names from the resolved set. This allows fine-grained exclusion (e.g., disable `search_files` while keeping `read_file`, `write_file`, and `patch`).
 
-5. **Dynamic schema patching** — after filtering, `execute_code` and `browser_navigate` schemas are dynamically adjusted to only reference tools that actually passed filtering (prevents model hallucination of unavailable tools).
+5. **Registry filtering** — the resolved tool name set is passed to `registry.get_definitions()`, which applies `check_fn` filtering and returns OpenAI-format schemas.
+
+6. **Dynamic schema patching** — after filtering, `execute_code` and `browser_navigate` schemas are dynamically adjusted to only reference tools that actually passed filtering (prevents model hallucination of unavailable tools).
 
 ### Legacy toolset names
 

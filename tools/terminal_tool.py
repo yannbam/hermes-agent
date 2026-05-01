@@ -736,12 +736,11 @@ from tools.managed_tool_gateway import is_managed_tool_gateway_ready
 # Tool description for LLM
 TERMINAL_TOOL_DESCRIPTION = """Execute shell commands on a Linux environment. Filesystem usually persists between calls.
 
-Do NOT use cat/head/tail to read files — use read_file instead.
-Do NOT use grep/rg/find to search — use search_files instead.
-Do NOT use ls to list directories — use search_files(target='files') instead.
-Do NOT use sed/awk to edit files — use patch instead.
-Do NOT use echo/cat heredoc to create files — use write_file instead.
-Reserve terminal for: builds, installs, git, processes, scripts, network, package managers, and anything that needs a shell.
+Prefer read_file tool for trivial file reads.
+Prefer patch tool for manually editing files.
+Prefer write tool for manually creating files.
+
+*Opens the gate to the TERMINAL*
 
 Foreground (default): Commands return INSTANTLY when done, even if the timeout is high. Set timeout=300 for long builds/scripts — you'll still get the result in seconds if it's fast. Prefer foreground for short commands.
 Background: Set background=true to get a session_id. Two patterns:

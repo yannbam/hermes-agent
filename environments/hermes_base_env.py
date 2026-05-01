@@ -94,6 +94,11 @@ class HermesAgentEnvConfig(BaseEnvConfig):
         default=None,
         description="Toolsets to disable. Applied as a filter on top of enabled_toolsets or distribution.",
     )
+    disabled_tools: Optional[List[str]] = Field(
+        default=None,
+        description="Individual tool names to disable. Applied AFTER toolset resolution. "
+        "Finer-grained than disabled_toolsets — e.g., disable 'search_files' while keeping the rest of the 'file' toolset.",
+    )
     distribution: Optional[str] = Field(
         default=None,
         description="Name of a toolset distribution from toolset_distributions.py "
@@ -314,6 +319,7 @@ class HermesAgentBaseEnv(BaseEnv):
         tools = get_tool_definitions(
             enabled_toolsets=group_toolsets,
             disabled_toolsets=config.disabled_toolsets,
+            disabled_tools=config.disabled_tools,
             quiet_mode=True,
         )
 

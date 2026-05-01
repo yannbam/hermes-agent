@@ -609,6 +609,20 @@ platform_toolsets:
   yuanbao: [hermes-yuanbao]
 
 # =============================================================================
+# Per-Tool Blacklisting
+# =============================================================================
+# Disable specific individual tools without losing the rest of their toolset.
+# Applied AFTER toolset resolution — e.g., disabling search_files removes it
+# from the file toolset while keeping read_file, write_file, and patch.
+#
+# Equivalent CLI flag: hermes chat --disable-tools search_files,web_search
+#
+# disabled_tools:
+#   - search_files
+#   - web_search
+disabled_tools: []
+
+# =============================================================================
 # Gateway Platform Settings
 # =============================================================================
 # Optional per-platform messaging settings.
