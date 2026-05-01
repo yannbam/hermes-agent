@@ -8449,10 +8449,11 @@ class AIAgent:
             )
 
     @staticmethod
-    def _detail_divider() -> str:
-        """Return a horizontal divider line at terminal width."""
+    def _detail_divider(char: str = "─", *, half: bool = False) -> str:
+        """Return a horizontal divider line at terminal width (or half)."""
         import shutil as _shutil
-        return "─" * _shutil.get_terminal_size((120, 24)).columns
+        w = _shutil.get_terminal_size((120, 24)).columns
+        return char * (w // 2 if half else w)
 
     @staticmethod
     def _format_for_display(obj, indent: str = "     ") -> str:
@@ -8607,10 +8608,10 @@ class AIAgent:
             for i, (tc, name, args) in enumerate(parsed_calls, 1):
                 args_str = json.dumps(args, ensure_ascii=False)
                 if self.detailed_output:
-                    print(f"  📞 Tool {i}: {name}({list(args.keys())})")
+                    print(f"  🔧 Tool {i}: {name}({list(args.keys())})")
                     print(f"     Args:")
                     print(self._format_for_display(args, indent="       "))
-                    print(self._detail_divider())
+                    print(self._detail_divider("═"))
                 else:
                     args_preview = args_str[:self.log_prefix_chars] + "..." if len(args_str) > self.log_prefix_chars else args_str
                     print(f"  📞 Tool {i}: {name}({list(args.keys())}) - {args_preview}")
@@ -8797,11 +8798,11 @@ class AIAgent:
                     except (json.JSONDecodeError, TypeError):
                         result_obj = function_result
                     if isinstance(result_obj, (dict, list)):
-                        print(f"     Result:")
+                        print(f"  ➡️ Result:")
                         print(self._format_for_display(result_obj, indent="       "))
                     else:
-                        print(f"     Result: {result_obj}")
-                    print(self._detail_divider())
+                        print(f"  ➡️ Result: {result_obj}")
+                    print(self._detail_divider(half=True))
                 else:
                     response_preview = function_result[:self.log_prefix_chars] + "..." if len(function_result) > self.log_prefix_chars else function_result
                     print(f"  ✅ Tool {i+1} completed in {tool_duration:.2f}s - {response_preview}")
@@ -8905,10 +8906,10 @@ class AIAgent:
             if not self.quiet_mode:
                 args_str = json.dumps(function_args, ensure_ascii=False)
                 if self.detailed_output:
-                    print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())})")
+                    print(f"  🔧 Tool {i}: {function_name}({list(function_args.keys())})")
                     print(f"     Args:")
                     print(self._format_for_display(function_args, indent="       "))
-                    print(self._detail_divider())
+                    print(self._detail_divider(half=True))
                 else:
                     args_preview = args_str[:self.log_prefix_chars] + "..." if len(args_str) > self.log_prefix_chars else args_str
                     print(f"  📞 Tool {i}: {function_name}({list(function_args.keys())}) - {args_preview}")
@@ -9212,11 +9213,11 @@ class AIAgent:
                     except (json.JSONDecodeError, TypeError):
                         result_obj = function_result
                     if isinstance(result_obj, (dict, list)):
-                        print(f"     Result:")
+                        print(f"  ➡️ Result:")
                         print(self._format_for_display(result_obj, indent="       "))
                     else:
-                        print(f"     Result: {result_obj}")
-                    print(self._detail_divider())
+                        print(f"  ➡️ Result: {result_obj}")
+                    print(self._detail_divider("═"))
                 else:
                     response_preview = function_result[:self.log_prefix_chars] + "..." if len(function_result) > self.log_prefix_chars else function_result
                     print(f"  ✅ Tool {i} completed in {tool_duration:.2f}s - {response_preview}")
